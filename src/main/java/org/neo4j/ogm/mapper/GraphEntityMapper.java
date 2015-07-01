@@ -20,21 +20,10 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.neo4j.ogm.annotation.EndNode;
 import org.neo4j.ogm.annotation.Relationship;
 import org.neo4j.ogm.annotation.StartNode;
-import org.neo4j.ogm.entityaccess.DefaultEntityAccessStrategy;
-import org.neo4j.ogm.entityaccess.EntityAccess;
-import org.neo4j.ogm.entityaccess.EntityAccessStrategy;
-import org.neo4j.ogm.entityaccess.EntityFactory;
-import org.neo4j.ogm.entityaccess.FieldWriter;
-import org.neo4j.ogm.entityaccess.PropertyReader;
-import org.neo4j.ogm.entityaccess.PropertyWriter;
-import org.neo4j.ogm.entityaccess.RelationalReader;
-import org.neo4j.ogm.entityaccess.RelationalWriter;
+import org.neo4j.ogm.entityaccess.*;
 import org.neo4j.ogm.metadata.BaseClassNotFoundException;
 import org.neo4j.ogm.metadata.MappingException;
 import org.neo4j.ogm.metadata.MetaData;
@@ -44,6 +33,8 @@ import org.neo4j.ogm.model.GraphModel;
 import org.neo4j.ogm.model.NodeModel;
 import org.neo4j.ogm.model.Property;
 import org.neo4j.ogm.model.RelationshipModel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Vince Bickers
@@ -173,12 +164,12 @@ public class GraphEntityMapper implements GraphToEntityMapper<GraphModel> {
         }
     }
 
-    private boolean tryMappingAsSingleton(Object source, Object parameter, RelationshipModel edge) {
+    private boolean tryMappingAsSingleton(Object source, Object parameter, RelationshipModel edge, String relationshipDirection) {
 
         String edgeLabel = edge.getType();
         ClassInfo sourceInfo = metadata.classInfo(source);
 
-        RelationalWriter writer = entityAccessStrategy.getRelationalWriter(sourceInfo, edgeLabel, parameter);
+        RelationalWriter writer = entityAccessStrategy.getRelationalWriter(sourceInfo, edgeLabel, relationshipDirection, parameter);
         if (writer != null && writer.forScalar()) {
             writer.write(source, parameter);
             return true;
@@ -217,45 +208,47 @@ public class GraphEntityMapper implements GraphToEntityMapper<GraphModel> {
                     }
 
                     // source.setRelationshipEntity if OUTGOING/UNDIRECTED
-                    if (!relationshipDirection(source, edge, relationshipEntity).equals(Relationship.INCOMING)) {
+                    if (!relationshipDirection(source, edge, Relationship.OUTGOING, relationshipEntity).equals(Relationship.INCOMING)) {
                         // try and find a one-to-one writer
                         ClassInfo sourceInfo = metadata.classInfo(source);
-                        RelationalWriter writer = entityAccessStrategy.getRelationalWriter(sourceInfo, edge.getType(), relationshipEntity);
+                        RelationalWriter writer = entityAccessStrategy.getRelationalWriter(sourceInfo, edge.getType(), Relationship.OUTGOING, relationshipEntity);
 
                         if (writer == null) {
-                            throw new RuntimeException("no writer for " + source);
+                            logger.info("No writer for {}", target );
                         }
-
-                        if (writer.forScalar()) {
-                            writer.write(source, relationshipEntity);
-                            mappingContext.registerRelationship(new MappedRelationship(edge.getStartNode(), edge.getType(), edge.getEndNode(), edge.getId()));
-                        } else {
-                            oneToMany.add(edge);
+                        else {
+                            if (writer.forScalar()) {
+                                writer.write(source, relationshipEntity);
+                                mappingContext.registerRelationship(new MappedRelationship(edge.getStartNode(), edge.getType(), edge.getEndNode(), edge.getId()));
+                            } else {
+                                oneToMany.add(edge);
+                            }
                         }
                     }
                     // target.setRelationshipEntity if INCOMING/UNDIRECTED
-                    if (!relationshipDirection(target, edge, relationshipEntity).equals(Relationship.OUTGOING)) {
+                    if (!relationshipDirection(target, edge, Relationship.INCOMING, relationshipEntity).equals(Relationship.OUTGOING)) {
                         ClassInfo targetInfo = metadata.classInfo(target);
-                        RelationalWriter writer = entityAccessStrategy.getRelationalWriter(targetInfo, edge.getType(), relationshipEntity);
+                        RelationalWriter writer = entityAccessStrategy.getRelationalWriter(targetInfo, edge.getType(), Relationship.INCOMING, relationshipEntity);
 
                         if (writer == null) {
-                            throw new RuntimeException("no writer for " + target);
+                            logger.info("No writer for {}", target );
                         }
-
-                        if (writer.forScalar()) {
-                            writer.write(target, relationshipEntity);
-                        } else {
-                            oneToMany.add(edge);
+                        else {
+                            if (writer.forScalar()) {
+                                writer.write(target, relationshipEntity);
+                            } else {
+                                oneToMany.add(edge);
+                            }
                         }
                     }
                 }
                 else {
                     boolean oneToOne = true;
-                    if (!relationshipDirection(source, edge, target).equals(Relationship.INCOMING)) {
-                        oneToOne &= tryMappingAsSingleton(source, target, edge);
+                    if (!relationshipDirection(source, edge, Relationship.OUTGOING, target).equals(Relationship.INCOMING)) {
+                        oneToOne &= tryMappingAsSingleton(source, target, edge, Relationship.OUTGOING);
                     }
-                    if (!relationshipDirection(target, edge, source).equals(Relationship.OUTGOING)) {
-                        oneToOne &= tryMappingAsSingleton(target, source, edge);
+                    if (!relationshipDirection(target, edge, Relationship.INCOMING, source).equals(Relationship.OUTGOING)) {
+                        oneToOne &= tryMappingAsSingleton(target, source, edge, Relationship.INCOMING);
 
                     }
                     if (!oneToOne) {
@@ -312,7 +305,7 @@ public class GraphEntityMapper implements GraphToEntityMapper<GraphModel> {
 
         EntityCollector typeRelationships = new EntityCollector();
 
-        // first, build the full set of related entities of each type for each source entity in the relationship
+        // first, build the full set of related entities of each type and direction for each source entity in the relationship
         for (RelationshipModel edge : oneToManyRelationships) {
 
             Object instance = mappingContext.getNodeEntity(edge.getStartNode());
@@ -322,19 +315,19 @@ public class GraphEntityMapper implements GraphToEntityMapper<GraphModel> {
             Object relationshipEntity = mappingContext.getRelationshipEntity(edge.getId());
             if (relationshipEntity != null) {
                 // establish a relationship between
-                if (!relationshipDirection(instance, edge, relationshipEntity).equals(Relationship.INCOMING)) {
-                    typeRelationships.recordTypeRelationship(instance, relationshipEntity, edge.getType());
+                if (!relationshipDirection(instance, edge, Relationship.OUTGOING, relationshipEntity).equals(Relationship.INCOMING)) {
+                    typeRelationships.recordTypeRelationship(instance, relationshipEntity, edge.getType(), Relationship.OUTGOING);
                 }
-                if (!relationshipDirection(parameter, edge, relationshipEntity).equals(Relationship.OUTGOING)) {
-                    typeRelationships.recordTypeRelationship(parameter, relationshipEntity,edge.getType());
+                if (!relationshipDirection(parameter, edge, Relationship.INCOMING, relationshipEntity).equals(Relationship.OUTGOING)) {
+                    typeRelationships.recordTypeRelationship(parameter, relationshipEntity,edge.getType(), Relationship.INCOMING);
                 }
             }
             else {
-                if (!relationshipDirection(instance, edge, parameter).equals(Relationship.INCOMING)) {
-                    typeRelationships.recordTypeRelationship(instance, parameter,edge.getType());
+                if (!relationshipDirection(instance, edge, Relationship.OUTGOING, parameter).equals(Relationship.INCOMING)) {
+                    typeRelationships.recordTypeRelationship(instance, parameter,edge.getType(), Relationship.OUTGOING);
                 }
-                if (!relationshipDirection(parameter, edge, instance).equals(Relationship.OUTGOING)) {
-                    typeRelationships.recordTypeRelationship(parameter, instance,edge.getType());
+                if (!relationshipDirection(parameter, edge, Relationship.INCOMING, instance).equals(Relationship.OUTGOING)) {
+                    typeRelationships.recordTypeRelationship(parameter, instance,edge.getType(), Relationship.INCOMING);
                 }
             }
         }
@@ -343,9 +336,13 @@ public class GraphEntityMapper implements GraphToEntityMapper<GraphModel> {
         for (Object instance : typeRelationships.getOwningTypes()) {
             //get all relationship types for which we're trying to set collections of instances
             for (String relationshipType : typeRelationships.getOwningRelationshipTypes(instance)) {
-                Collection<?> entities = typeRelationships.getCollectiblesForOwnerAndRelationshipType(instance,relationshipType);
-                Class entityType = typeRelationships.getCollectibleTypeForOwnerAndRelationshipType(instance, relationshipType);
-                mapOneToMany(instance, entityType, entities,relationshipType);
+                //for each relationship type, get all the directions for which we're trying to set collections of instances
+                for (String relationshipDirection : typeRelationships.getRelationshipDirectionsForOwningTypeAndRelationshipType(instance,relationshipType)) {
+                    Collection<?> entities = typeRelationships.getCollectiblesForOwnerAndRelationship(instance, relationshipType, relationshipDirection);
+                    Class entityType = typeRelationships.getCollectibleTypeForOwnerAndRelationship(instance, relationshipType, relationshipDirection);
+                    mapOneToMany(instance, entityType, entities,relationshipType, relationshipDirection);
+                }
+
             }
         }
 
@@ -367,11 +364,11 @@ public class GraphEntityMapper implements GraphToEntityMapper<GraphModel> {
      * @param target en entity representing the end of the relationship from the graph's perspective
      * @return  one of Relationship.OUTGOING, Relationship.INCOMING, Relationship.UNDIRECTED
      */
-    private String relationshipDirection(Object source, RelationshipModel edge, Object target) {
+    private String relationshipDirection(Object source, RelationshipModel edge, String relationshipDirection, Object target) {
         ClassInfo classInfo = metadata.classInfo(source);
-        RelationalWriter writer = entityAccessStrategy.getRelationalWriter(classInfo, edge.getType(), target);
+        RelationalWriter writer = entityAccessStrategy.getRelationalWriter(classInfo, edge.getType(), relationshipDirection, target);
         if (writer == null) {
-            writer = entityAccessStrategy.getIterableWriter(classInfo, target.getClass(),edge.getType());
+            writer = entityAccessStrategy.getIterableWriter(classInfo, target.getClass(),edge.getType(), relationshipDirection);
             // will occur if there is no relationship specified on a relationship entity
             if (writer == null) {
                 return Relationship.OUTGOING;  // the default
@@ -389,15 +386,15 @@ public class GraphEntityMapper implements GraphToEntityMapper<GraphModel> {
      * @param relationshipType the relationship type associated with these values
      * @return true if mapping succeeded, false otherwise
      */
-    private boolean mapOneToMany(Object instance, Class<?> valueType, Object values, String relationshipType) {
+    private boolean mapOneToMany(Object instance, Class<?> valueType, Object values, String relationshipType, String relationshipDirection) {
 
         ClassInfo classInfo = metadata.classInfo(instance);
 
         // TODO: should just have one kind of relationshipWriter
-        RelationalWriter writer = entityAccessStrategy.getIterableWriter(classInfo, valueType, relationshipType);
+        RelationalWriter writer = entityAccessStrategy.getIterableWriter(classInfo, valueType, relationshipType, relationshipDirection);
         if (writer != null) {
             if (writer.type().isArray() || Iterable.class.isAssignableFrom(writer.type())) {
-                RelationalReader reader = entityAccessStrategy.getIterableReader(classInfo, valueType, relationshipType);
+                RelationalReader reader = entityAccessStrategy.getIterableReader(classInfo, valueType, relationshipType, relationshipDirection);
                 Object currentValues;
                 if (reader != null) {
                     currentValues = reader.read(instance);

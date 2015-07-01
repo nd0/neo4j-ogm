@@ -89,6 +89,17 @@ public class MethodInfo {
         return null;
     }
 
+    public String relationshipTypeAnnotation() {
+        if (!isSimpleSetter() && !isSimpleGetter()) {
+            try {
+                return getAnnotations().get(Relationship.CLASS).get(Relationship.TYPE, null);
+            } catch (NullPointerException npe) {
+                //TODO log
+            }
+        }
+        return null;
+    }
+
     public String getDescriptor() {
         return descriptor;
     }
