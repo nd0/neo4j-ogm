@@ -29,7 +29,7 @@ import org.slf4j.LoggerFactory;
  * @author Adam George
  * @author Luanne Misquitta
  */
-public class EntityCollector {
+class EntityCollector {
 
     private final Logger logger = LoggerFactory.getLogger(EntityCollector.class);
     private final Map<Object, Map<Relationship, Set<Object>>> relationshipCollectibles = new HashMap<>();

@@ -76,7 +76,7 @@ public class GraphEntityMapper implements GraphToEntityMapper<GraphModel> {
             }
         }
 
-        // only look for REs if we node NEs were found
+        // only look for REs if no node entities were found
         if (results.isEmpty()) {
             for (Long id : edgeIds) {
                 Object o = mappingContext.getRelationshipEntity(id);

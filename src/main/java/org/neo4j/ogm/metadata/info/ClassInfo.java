@@ -389,16 +389,17 @@ public class ClassInfo {
     /**
      * Finds the relationship field with a specific name and direction from the ClassInfo's relationship fields
      *
-     * @param relationshipName the relationshipName of the field to find
+     * @param relationshipName      the relationshipName of the field to find
      * @param relationshipDirection the direction of the relationship
-     * @param strict
+     * @param strict                if true, does not infer relationship type but looks for it in the @Relationship annotation. Null if missing. If false, infers relationship type from FieldInfo
      * @return A FieldInfo object describing the required relationship field, or null if it doesn't exist.
      */
     public FieldInfo relationshipField(String relationshipName, String relationshipDirection, boolean strict) {
         for (FieldInfo fieldInfo : relationshipFields()) {
             String relationship = strict ? fieldInfo.relationshipTypeAnnotation() : fieldInfo.relationship();
             if (relationshipName.equalsIgnoreCase(relationship)) {
-                if((fieldInfo.relationshipDirection().equals(Relationship.INCOMING) && relationshipDirection.equals(Relationship.INCOMING)) || (relationshipDirection.equals(Relationship.OUTGOING) && !(fieldInfo.relationshipDirection().equals(Relationship.INCOMING)))) {
+                if(((fieldInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING) || fieldInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.UNDIRECTED))&& (relationshipDirection.equals(Relationship.INCOMING)))
+                        || (relationshipDirection.equals(Relationship.OUTGOING) && !(fieldInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)))) {
                     return fieldInfo;
                 }
             }
@@ -583,14 +584,17 @@ public class ClassInfo {
     /**
      * Finds the relationship getter with a specific name and direction from the specified ClassInfo's relationship getters
      *
-     * @param relationshipName the relationshipName of the getter to find
-     * @param relationshipDirection the relaitonship direction
+     * @param relationshipName      the relationshipName of the getter to find
+     * @param relationshipDirection the relationship direction
+     * @param strict                if true, does not infer relationship type but looks for it in the @Relationship annotation. Null if missing. If false, infers relationship type from MethodInfo
      * @return A MethodInfo object describing the required relationship getter, or null if it doesn't exist.
      */
-    public MethodInfo relationshipGetter(String relationshipName, String relationshipDirection) {
+    public MethodInfo relationshipGetter(String relationshipName, String relationshipDirection, boolean strict) {
         for (MethodInfo methodInfo : relationshipGetters()) {
-            if (methodInfo.relationship().equalsIgnoreCase(relationshipName)) {
-                if((methodInfo.relationshipDirection().equals(Relationship.INCOMING) && relationshipDirection.equals(Relationship.INCOMING)) || (relationshipDirection.equals(Relationship.OUTGOING) && !(methodInfo.relationshipDirection().equals(Relationship.INCOMING)))) {
+            String relationship = strict ? methodInfo.relationshipTypeAnnotation() : methodInfo.relationship();
+            if (relationshipName.equalsIgnoreCase(relationship)) {
+                if(((methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING) || methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.UNDIRECTED)) && relationshipDirection.equals(Relationship.INCOMING))
+                        || (relationshipDirection.equals(Relationship.OUTGOING) && !(methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)))) {
                     return methodInfo;
                 }
             }
@@ -616,16 +620,17 @@ public class ClassInfo {
     /**
      * Finds the relationship setter with a specific name and direction from the specified ClassInfo's relationship setters.
      *
-     * @param relationshipName the relationshipName of the setter to find
+     * @param relationshipName      the relationshipName of the setter to find
      * @param relationshipDirection the relationship direction
-     * @param strict
+     * @param strict                if true, does not infer relationship type but looks for it in the @Relationship annotation. Null if missing. If false, infers relationship type from MethodInfo
      * @return A MethodInfo object describing the required relationship setter, or null if it doesn't exist.
      */
     public MethodInfo relationshipSetter(String relationshipName, String relationshipDirection, boolean strict) {
         for (MethodInfo methodInfo : relationshipSetters()) {
             String relationship = strict ? methodInfo.relationshipTypeAnnotation() : methodInfo.relationship();
             if (relationshipName.equalsIgnoreCase(relationship)) {
-                if((methodInfo.relationshipDirection().equals(Relationship.INCOMING) && relationshipDirection.equals(Relationship.INCOMING)) || (relationshipDirection.equals(Relationship.OUTGOING) && !(methodInfo.relationshipDirection().equals(Relationship.INCOMING)))) {
+                if(((methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING) || methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.UNDIRECTED)) && relationshipDirection.equals(Relationship.INCOMING))
+                        || (relationshipDirection.equals(Relationship.OUTGOING) && !(methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)))) {
                     return methodInfo;
                 }
             }
@@ -791,19 +796,25 @@ public class ClassInfo {
         }
     }
 
+
     /**
      * Finds all fields whose type is equivalent to Array&lt;X&gt; or assignable from Iterable&lt;X&gt;
      * where X is the generic parameter type of the Array or Iterable and the relationship type backing this iterable is "relationshipType"
      *
      * @param iteratedType      the type of iterable
      * @param relationshipType  the relationship type
+     * @param strict            if true, does not infer relationship type but looks for it in the @Relationship annotation. Null if missing. If false, infers relationship type from FieldInfo
      * @return {@link List} of {@link MethodInfo}, never <code>null</code>
      */
-    public List<FieldInfo> findIterableFields(Class iteratedType, String relationshipType) {
+    public List<FieldInfo> findIterableFields(Class iteratedType, String relationshipType, String relationshipDirection, boolean strict) {
         List<FieldInfo> fieldInfos = new ArrayList<>();
         for(FieldInfo fieldInfo : findIterableFields(iteratedType)) {
-            if(fieldInfo.relationship().equals(relationshipType)) {
-                fieldInfos.add(fieldInfo);
+            String relationship = strict ? fieldInfo.relationshipTypeAnnotation() : fieldInfo.relationship();
+            if(relationshipType.equals(relationship)) {
+                if(((fieldInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING) || fieldInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.UNDIRECTED)) && relationshipDirection.equals(Relationship.INCOMING))
+                        || (relationshipDirection.equals(Relationship.OUTGOING) && !(fieldInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)))) {
+                    fieldInfos.add(fieldInfo);
+                }
             }
         }
         return fieldInfos;
@@ -853,39 +864,25 @@ public class ClassInfo {
         }
     }
 
-    /**
-     * Finds all setter methods whose parameter signature is equivalent to Array&lt;X&gt; or assignable from Iterable&lt;X&gt;
-     * where X is the generic parameter type of the Array or Iterable and the relationship type this setter is annotated with is "relationshipType"
-     *
-     * @param iteratedType      the type of iterable
-     * @param relationshipType  the relationship type
-     * @return {@link List} of {@link MethodInfo}, never <code>null</code>
-     * */
-    public List<MethodInfo> findIterableSetters(Class iteratedType, String relationshipType) {
-        List<MethodInfo> methodInfos = new ArrayList<>();
-        for(MethodInfo methodInfo : findIterableSetters(iteratedType)) {
-            if(methodInfo.relationship().equals(relationshipType)) {
-                methodInfos.add(methodInfo);
-            }
-        }
-        return methodInfos;
-    }
 
     /**
      * Finds all setter methods whose parameter signature is equivalent to Array&lt;X&gt; or assignable from Iterable&lt;X&gt;
      * where X is the generic parameter type of the Array or Iterable and the relationship type this setter is annotated with is "relationshipType"
      * and the relationship direction matches "relationshipDirection"
      *
-     * @param iteratedType      the type of iterable
-     * @param relationshipType  the relationship type
+     * @param iteratedType          the type of iterable
+     * @param relationshipType      the relationship type
      * @param relationshipDirection the relationship direction
+     * @param strict                if true, does not infer relationship type but looks for it in the @Relationship annotation. Null if missing. If false, infers relationship type from MethodInfo
      * @return {@link List} of {@link MethodInfo}, never <code>null</code>
      * */
-    public List<MethodInfo> findIterableSetters(Class iteratedType, String relationshipType, String relationshipDirection) {
+    public List<MethodInfo> findIterableSetters(Class iteratedType, String relationshipType, String relationshipDirection, boolean strict) {
         List<MethodInfo> methodInfos = new ArrayList<>();
         for(MethodInfo methodInfo : findIterableSetters(iteratedType)) {
-            if(methodInfo.relationship().equals(relationshipType)) {
-                if((methodInfo.relationshipDirection().equals(Relationship.INCOMING) && relationshipDirection.equals(Relationship.INCOMING)) || (relationshipDirection.equals(Relationship.OUTGOING) && !(methodInfo.relationshipDirection().equals(Relationship.INCOMING)))) {
+            String relationship = strict ? methodInfo.relationshipTypeAnnotation() : methodInfo.relationship();
+            if(relationshipType.equals(relationship)) {
+                if(((methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING) || methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.UNDIRECTED)) && relationshipDirection.equals(Relationship.INCOMING))
+                        || (relationshipDirection.equals(Relationship.OUTGOING) && !(methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)))) {
                     methodInfos.add(methodInfo);
                 }
             }
@@ -895,12 +892,12 @@ public class ClassInfo {
 
 
     /**
-		 * Finds all getter methods whose parameterised return type is equivalent to Array&lt;X&gt; or assignable from Iterable&lt;X&gt;
-		 * where X is the generic parameter type of the Array or Iterable
-         *
-         * @param iteratedType  the type of iterable
-         * @return {@link List} of {@link MethodInfo}, never <code>null</code>
-		 */
+     * Finds all getter methods whose parameterised return type is equivalent to Array&lt;X&gt; or assignable from Iterable&lt;X&gt;
+     * where X is the generic parameter type of the Array or Iterable
+     *
+     * @param iteratedType  the type of iterable
+     * @return {@link List} of {@link MethodInfo}, never <code>null</code>
+     */
     public List<MethodInfo> findIterableGetters(Class iteratedType) {
         List<MethodInfo> methodInfos = new ArrayList<>();
         String typeSignature = "L" + iteratedType.getName().replace('.', '/') + ";";
@@ -939,36 +936,22 @@ public class ClassInfo {
     /**
      * Finds all getter methods whose parameterised return type is equivalent to Array&lt;X&gt; or assignable from Iterable&lt;X&gt;
      * where X is the generic parameter type of the Array or Iterable and the relationship type this getter is annotated with is "relationshipType"
-     *
-     * @param iteratedType      the type of iterable
-     * @param relationshipType  the relationship type
-     * @return {@link List} of {@link MethodInfo}, never <code>null</code>
-     */
-    public List<MethodInfo> findIterableGetters(Class iteratedType, String relationshipType) {
-        List<MethodInfo> methodInfos = new ArrayList<>();
-        for(MethodInfo methodInfo : findIterableGetters(iteratedType)) {
-            if(methodInfo.relationship().equals(relationshipType)) {
-                methodInfos.add(methodInfo);
-            }
-        }
-        return methodInfos;
-    }
-
-    /**
-     * Finds all getter methods whose parameterised return type is equivalent to Array&lt;X&gt; or assignable from Iterable&lt;X&gt;
-     * where X is the generic parameter type of the Array or Iterable and the relationship type this getter is annotated with is "relationshipType"
      * and the direction of the relationship is "relationshipDirection"
      *
-     * @param iteratedType      the type of iterable
-     * @param relationshipType  the relationship type
+     * @param iteratedType          the type of iterable
+     * @param relationshipType      the relationship type
      * @param relationshipDirection the relationshipDirection
+     * @param strict                if true, does not infer relationship type but looks for it in the @Relationship annotation. Null if missing. If false, infers relationship type from MethodInfo
      * @return {@link List} of {@link MethodInfo}, never <code>null</code>
      */
-    public List<MethodInfo> findIterableGetters(Class iteratedType, String relationshipType, String relationshipDirection) {
+    public List<MethodInfo> findIterableGetters(Class iteratedType, String relationshipType, String relationshipDirection, boolean strict) {
         List<MethodInfo> methodInfos = new ArrayList<>();
         for(MethodInfo methodInfo : findIterableGetters(iteratedType)) {
-            if(methodInfo.relationship().equals(relationshipType)) {
-                if((methodInfo.relationshipDirection().equals(Relationship.INCOMING) && relationshipDirection.equals(Relationship.INCOMING)) || (relationshipDirection.equals(Relationship.OUTGOING) && !(methodInfo.relationshipDirection().equals(Relationship.INCOMING)))) {
+            String relationship = strict ? methodInfo.relationshipTypeAnnotation() : methodInfo.relationship();
+
+            if(relationshipType.equals(relationship)) {
+                if(((methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING) || methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.UNDIRECTED)) && relationshipDirection.equals(Relationship.INCOMING))
+                        || (relationshipDirection.equals(Relationship.OUTGOING) && !(methodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)))) {
                     methodInfos.add(methodInfo);
                 }
             }

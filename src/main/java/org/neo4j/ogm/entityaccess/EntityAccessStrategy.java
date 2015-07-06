@@ -32,7 +32,7 @@ public interface EntityAccessStrategy {
     PropertyWriter getPropertyWriter(ClassInfo classInfo, String propertyName);
 
     RelationalWriter getRelationalWriter(ClassInfo classInfo, String relationshipType, String relationshipDirection, Object parameter);
-    RelationalReader getRelationalReader(ClassInfo classInfo, String relationshipType, String relationshipDirection);
+    RelationalReader getRelationalReader(ClassInfo classInfo, String relationshipType, String relationshipDirection); //TODO this method isn't used by anything other than tests?
 
     RelationalWriter getIterableWriter(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection);
     RelationalReader getIterableReader(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection);

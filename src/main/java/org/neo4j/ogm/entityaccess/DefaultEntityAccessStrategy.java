@@ -108,7 +108,7 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
     @Override
     public EntityAccess getRelationalWriter(ClassInfo classInfo, String relationshipType, String relationshipDirection, Object scalarValue) {
 
-        // 1st, try to find a scalar method annotated with the relationship type.
+        // 1st, try to find a scalar method which is explicitly annotated with the relationship type and direction
         MethodInfo methodInfo = classInfo.relationshipSetter(relationshipType, relationshipDirection, true);
         if (methodInfo != null && !methodInfo.getAnnotations().isEmpty()) {
 
@@ -120,7 +120,7 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
             }
         }
 
-        // 2nd, try to find a scalar or vector field annotated as the neo4j relationship type
+        // 2nd, try to find a scalar or vector field explicitly annotated as the neo4j relationship type and direction
         FieldInfo fieldInfo = classInfo.relationshipField(relationshipType, relationshipDirection, true);
         if (fieldInfo != null && !fieldInfo.getAnnotations().isEmpty()) {
             if (fieldInfo.isTypeOf(scalarValue.getClass()) ||
@@ -130,8 +130,10 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
             }
         }
 
-        //If the direction is INCOMING, then the annotation should have been present and we should have found a match already
+        //If the direction is INCOMING, then the annotation should have been present and we should have found a match already.
+        //If it's outgoing, then proceed to find other matches
         if(!relationshipDirection.equals(Relationship.INCOMING)) {
+            // 3rd, try to find a scalar method annotated with the relationship type and direction, allowing for implied relationships
             methodInfo = classInfo.relationshipSetter(relationshipType, relationshipDirection, false);
             if (methodInfo != null && !methodInfo.getAnnotations().isEmpty()) {
 
@@ -143,7 +145,7 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
                 }
             }
 
-            // 2nd, try to find a scalar or vector field annotated as the neo4j relationship type
+            // 4th, try to find a scalar or vector field annotated as the neo4j relationship type and direction, allowing for implied relationships
             fieldInfo = classInfo.relationshipField(relationshipType, relationshipDirection, false);
             if (fieldInfo != null && !fieldInfo.getAnnotations().isEmpty()) {
                 if (fieldInfo.isTypeOf(scalarValue.getClass()) ||
@@ -153,7 +155,7 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
                 }
             }
 
-            // 3rd, try to find a "setXYZ" method where XYZ is derived from the relationship type
+            // 5th, try to find a "setXYZ" method where XYZ is derived from the relationship type
             methodInfo = classInfo.relationshipSetter(relationshipType, relationshipDirection, false); //TODO match the field if it exists
             if (methodInfo != null) {
                 if (methodInfo.isTypeOf(scalarValue.getClass()) ||
@@ -163,7 +165,7 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
                 }
             }
 
-            // 4th, try to find a "XYZ" field name where XYZ is derived from the relationship type
+            // 6th, try to find a "XYZ" field name where XYZ is derived from the relationship type
             fieldInfo = classInfo.relationshipField(relationshipType, relationshipDirection, false);
             if (fieldInfo != null) {
                 if (fieldInfo.isTypeOf(scalarValue.getClass()) ||
@@ -174,17 +176,21 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
             }
 
             //Find unique setters that take the parameter or unique fields of the same type of the parameter only if relationshipDirection is not INCOMING
-            if (!relationshipDirection.equals(Relationship.INCOMING)) {
-                // 5th, try to find a unique setter method that takes the parameter
-                List<MethodInfo> methodInfos = classInfo.findSetters(scalarValue.getClass());
-                if (methodInfos.size() == 1) {
-                    return new MethodWriter(classInfo, methodInfos.iterator().next());
+            // 7th, try to find a unique setter method that takes the parameter
+            List<MethodInfo> methodInfos = classInfo.findSetters(scalarValue.getClass());
+            if (methodInfos.size() == 1) {
+                MethodInfo candidateMethodInfo = methodInfos.iterator().next();
+                if(!candidateMethodInfo.relationshipDirection(Relationship.UNDIRECTED).equals(Relationship.INCOMING)) {
+                    return new MethodWriter(classInfo, candidateMethodInfo);
                 }
+            }
 
-                // 6th, try to find a unique field that has the same type as the parameter
-                List<FieldInfo> fieldInfos = classInfo.findFields(scalarValue.getClass());
-                if (fieldInfos.size() == 1) {
-                    return new FieldWriter(classInfo, fieldInfos.iterator().next());
+            // 8th, try to find a unique field that has the same type as the parameter
+            List<FieldInfo> fieldInfos = classInfo.findFields(scalarValue.getClass());
+            if (fieldInfos.size() == 1) {
+                FieldInfo candidateFieldInfo = fieldInfos.iterator().next();
+                if(!candidateFieldInfo.relationshipDirection(Relationship.UNDIRECTED).equals(Relationship.INCOMING)) {
+                    return new FieldWriter(classInfo, candidateFieldInfo);
                 }
             }
         }
@@ -193,28 +199,41 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
 
     @Override
     public RelationalReader getRelationalReader(ClassInfo classInfo, String relationshipType, String relationshipDirection) {
-        // 1st, try to find a method annotated with the relationship type.
-        MethodInfo methodInfo = classInfo.relationshipGetter(relationshipType, relationshipDirection);
+        // 1st, try to find a method explicitly annotated with the relationship type and direction.
+        MethodInfo methodInfo = classInfo.relationshipGetter(relationshipType, relationshipDirection, true);
         if (methodInfo != null && !methodInfo.getAnnotations().isEmpty()) {
             return new MethodReader(classInfo, methodInfo);
         }
 
-        // 2nd, try to find a field called or annotated as the neo4j relationship type
-        FieldInfo fieldInfo = classInfo.relationshipField(relationshipType, relationshipDirection, false);
+        // 2nd, try to find a field explicitly annotated with the neo4j relationship type and direction
+        FieldInfo fieldInfo = classInfo.relationshipField(relationshipType, relationshipDirection, true);
         if (fieldInfo != null && !fieldInfo.getAnnotations().isEmpty()) {
             return new FieldReader(classInfo, fieldInfo);
         }
 
-        //Find a getter or field derived from the relationship type
-        //If it is INCOMING, then the annotation should have been present and we should have found a match already
-
+        //If the direction is INCOMING, then the annotation should have been present and we should have found a match already.
+        //If it's outgoing, then proceed to find other matches
         if(!relationshipDirection.equals(Relationship.INCOMING)) {
-            // 3rd, try to find a "getXYZ" method where XYZ is derived from the given relationship type
+
+            // 3rd, try to find a method  annotated with the relationship type and direction, allowing for implied relationships
+            methodInfo = classInfo.relationshipGetter(relationshipType, relationshipDirection, false);
+            if (methodInfo != null && !methodInfo.getAnnotations().isEmpty()) {
+                return new MethodReader(classInfo, methodInfo);
+            }
+
+            // 4th, try to find a field  annotated with the neo4j relationship type and direction, allowing for implied relationships
+            fieldInfo = classInfo.relationshipField(relationshipType, relationshipDirection, false);
+            if (fieldInfo != null && !fieldInfo.getAnnotations().isEmpty()) {
+                return new FieldReader(classInfo, fieldInfo);
+            }
+
+
+            // 5th, try to find a "getXYZ" method where XYZ is derived from the given relationship type
             if (methodInfo != null) {
                 return new MethodReader(classInfo, methodInfo);
             }
 
-            // 4th, try to find a "XYZ" field name where XYZ is derived from the relationship type
+            // 6th, try to find a "XYZ" field name where XYZ is derived from the relationship type
             if (fieldInfo != null) {
                 return new FieldReader(classInfo, fieldInfo);
             }
@@ -267,26 +286,64 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
 
     @Override
     public EntityAccess getIterableWriter(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection) {
-        MethodInfo methodInfo = getIterableSetterMethodInfo(classInfo, parameterType, relationshipType, relationshipDirection);
+        //1st find a method annotated with type and direction
+        MethodInfo methodInfo = getIterableSetterMethodInfo(classInfo, parameterType, relationshipType, relationshipDirection, true);
         if (methodInfo != null) {
             return new MethodWriter(classInfo, methodInfo);
         }
-        FieldInfo fieldInfo = getIterableFieldInfo(classInfo, parameterType, relationshipType,relationshipDirection);
+
+        //2nd find a field annotated with type and direction
+        FieldInfo fieldInfo = getIterableFieldInfo(classInfo, parameterType, relationshipType, relationshipDirection, true);
         if (fieldInfo != null) {
             return new FieldWriter(classInfo, fieldInfo);
+        }
+
+        //If relationshipDirection=INCOMING, we should have found an annotated field already
+
+        if(!relationshipDirection.equals(Relationship.INCOMING)) {
+            //3rd find a method with implied type and direction
+            methodInfo = getIterableSetterMethodInfo(classInfo, parameterType, relationshipType, relationshipDirection, false);
+            if (methodInfo != null) {
+                return new MethodWriter(classInfo, methodInfo);
+            }
+
+            //4th find a field with implied type and direction
+            fieldInfo = getIterableFieldInfo(classInfo, parameterType, relationshipType, relationshipDirection, false);
+            if (fieldInfo != null) {
+                return new FieldWriter(classInfo, fieldInfo);
+            }
         }
         return null;
     }
 
     @Override
     public RelationalReader getIterableReader(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection) {
-        MethodInfo methodInfo = getIterableGetterMethodInfo(classInfo, parameterType, relationshipType, relationshipDirection);
+        //1st find a method annotated with type and direction
+        MethodInfo methodInfo = getIterableGetterMethodInfo(classInfo, parameterType, relationshipType, relationshipDirection, true);
         if (methodInfo != null) {
             return new MethodReader(classInfo, methodInfo);
         }
-        FieldInfo fieldInfo = getIterableFieldInfo(classInfo, parameterType, relationshipType, relationshipDirection);
+
+        //2nd find a field annotated with type and direction
+        FieldInfo fieldInfo = getIterableFieldInfo(classInfo, parameterType, relationshipType, relationshipDirection, true);
         if (fieldInfo != null) {
             return new FieldReader(classInfo, fieldInfo);
+        }
+
+        //If relationshipDirection=INCOMING, we should have found an annotated field already
+
+        if(!relationshipDirection.equals(Relationship.INCOMING)) {
+            //3rd find a method with implied type and direction
+            methodInfo = getIterableGetterMethodInfo(classInfo, parameterType, relationshipType, relationshipDirection, false);
+            if (methodInfo != null) {
+                return new MethodReader(classInfo, methodInfo);
+            }
+
+            //4th find a field with implied type and direction
+            fieldInfo = getIterableFieldInfo(classInfo, parameterType, relationshipType, relationshipDirection, false);
+            if (fieldInfo != null) {
+                return new FieldReader(classInfo, fieldInfo);
+            }
         }
         return null;
     }
@@ -346,15 +403,25 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
         return null;
     }
 
-    private MethodInfo getIterableSetterMethodInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection) {
-        List<MethodInfo> methodInfos = classInfo.findIterableSetters(parameterType, relationshipType, relationshipDirection);
+    private MethodInfo getIterableSetterMethodInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection, boolean strict) {
+        List<MethodInfo> methodInfos = classInfo.findIterableSetters(parameterType, relationshipType, relationshipDirection, strict);
         if (methodInfos.size() == 0) {
-            if(!relationshipDirection.equals(Relationship.INCOMING)) {
+            if(!strict) {
                 methodInfos = classInfo.findIterableSetters(parameterType);
             }
         }
         if (methodInfos.size() == 1) {
-                return methodInfos.iterator().next();
+            MethodInfo candidateMethodInfo = methodInfos.iterator().next();
+            //If the relationshipDirection is incoming and the candidateMethodInfo is also incoming or undirected
+            if(relationshipDirection.equals(Relationship.INCOMING) &&
+                    (candidateMethodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)) ||
+                    (candidateMethodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.UNDIRECTED))) {
+                return candidateMethodInfo;
+            }
+            //If the relationshipDirection is not incoming and the candidateMethodInfo is not incoming
+            if(!relationshipDirection.equals(Relationship.INCOMING) && !candidateMethodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)) {
+                return candidateMethodInfo;
+            }
         }
 
         if (methodInfos.size() > 0) {
@@ -365,15 +432,25 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
         return null;
     }
 
-    private MethodInfo getIterableGetterMethodInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection) {
-        List<MethodInfo> methodInfos = classInfo.findIterableGetters(parameterType, relationshipType, relationshipDirection);
+    private MethodInfo getIterableGetterMethodInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection, boolean strict) {
+        List<MethodInfo> methodInfos = classInfo.findIterableGetters(parameterType, relationshipType, relationshipDirection, strict);
         if(methodInfos.size() == 0) {
-            if(!relationshipDirection.equals(Relationship.INCOMING)) {
+            if(!strict) {
                 methodInfos = classInfo.findIterableGetters(parameterType);
             }
         }
         if (methodInfos.size() == 1) {
-            return methodInfos.iterator().next();
+            MethodInfo candidateMethodInfo = methodInfos.iterator().next();
+            //If the relationshipDirection is incoming and the candidateMethodInfo is also incoming or undirected
+            if(relationshipDirection.equals(Relationship.INCOMING) &&
+                    (candidateMethodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)) ||
+                    (candidateMethodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.UNDIRECTED))) {
+                return candidateMethodInfo;
+            }
+            //If the relationshipDirection is not incoming and the candidateMethodInfo is not incoming
+            if(!relationshipDirection.equals(Relationship.INCOMING) && !candidateMethodInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)) {
+                return candidateMethodInfo;
+            }
         }
 
         if (methodInfos.size() > 0) {
@@ -383,15 +460,25 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
         return null;
     }
 
-    private FieldInfo getIterableFieldInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection) {
-        List<FieldInfo> fieldInfos = classInfo.findIterableFields(parameterType, relationshipType);
+    private FieldInfo getIterableFieldInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection, boolean strict) {
+        List<FieldInfo> fieldInfos = classInfo.findIterableFields(parameterType, relationshipType, relationshipDirection, strict);
         if(fieldInfos.size() == 0) {
-            if(!relationshipDirection.equals(Relationship.INCOMING)) {
+            if(!strict) {
                 fieldInfos = classInfo.findIterableFields(parameterType);
             }
         }
         if (fieldInfos.size() == 1) {
-                return fieldInfos.iterator().next();
+            FieldInfo candidateFieldInfo = fieldInfos.iterator().next();
+            //If the relationshipDirection is incoming and the candidateFieldInfo is also incoming or undirected
+            if(relationshipDirection.equals(Relationship.INCOMING) &&
+                    (candidateFieldInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)) ||
+                    (candidateFieldInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.UNDIRECTED))) {
+                return candidateFieldInfo;
+            }
+            //If the relationshipDirection is not incoming and the candidateFieldInfo is not incoming
+            if(!relationshipDirection.equals(Relationship.INCOMING) && !candidateFieldInfo.relationshipDirection(Relationship.OUTGOING).equals(Relationship.INCOMING)) {
+                return candidateFieldInfo;
+            }
         }
 
         if (fieldInfos.size() > 0) {

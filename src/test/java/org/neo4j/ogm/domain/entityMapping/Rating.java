@@ -39,8 +39,6 @@ public class Rating {
         rating.person = person;
         rating.movie = movie;
         rating.value = value;
-        person.movieRatings.add(rating);
-        movie.ratings.add(rating);
         return rating;
     }
 }

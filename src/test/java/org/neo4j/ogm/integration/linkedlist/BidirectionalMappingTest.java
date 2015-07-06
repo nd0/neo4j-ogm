@@ -65,11 +65,8 @@ public class BidirectionalMappingTest {
     public void shouldLoadDoublyLinkedList() {
 
         Item first = new Item();
-        first.setName("A");
         Item second = new Item();
-        second.setName("B");
         Item third = new Item();
-        third.setName("C");
 
         first.next = second;
         second.next = third;

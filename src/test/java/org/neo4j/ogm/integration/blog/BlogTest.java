@@ -82,7 +82,7 @@ public class BlogTest {
         assertEquals(p2.getId(), f1.getNext().getId());
         assertEquals(p3.getId(), f2.getNext().getId());
         assertEquals(p4.getId(), f3.getNext().getId());
-        assertNull(f4.getNext()); //third(2)
+        assertNull(f4.getNext());
 
     }
 }
