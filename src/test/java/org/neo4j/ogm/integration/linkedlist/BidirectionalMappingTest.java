@@ -12,22 +12,19 @@
  *
  */
 
-package org.neo4j.ogm.defects;
+package org.neo4j.ogm.integration.linkedlist;
+
+import static org.junit.Assert.*;
 
 import java.io.IOException;
 
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
-
 import org.neo4j.ogm.domain.linkedlist.Item;
 import org.neo4j.ogm.session.Session;
 import org.neo4j.ogm.session.SessionFactory;
 import org.neo4j.ogm.testutil.Neo4jIntegrationTestRule;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 
 /**
  * @see DATAGRAPH-636
@@ -52,7 +49,6 @@ import static org.junit.Assert.assertNull;
  *
  * @author Vince Bickers
  */
-@Ignore
 public class BidirectionalMappingTest {
 
     @Rule
@@ -69,8 +65,11 @@ public class BidirectionalMappingTest {
     public void shouldLoadDoublyLinkedList() {
 
         Item first = new Item();
+        first.setName("A");
         Item second = new Item();
+        second.setName("B");
         Item third = new Item();
+        third.setName("C");
 
         first.next = second;
         second.next = third;

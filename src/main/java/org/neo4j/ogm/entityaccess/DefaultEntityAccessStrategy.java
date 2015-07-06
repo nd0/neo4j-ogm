@@ -106,10 +106,10 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
     }
 
     @Override
-    public EntityAccess getRelationalWriter(ClassInfo classInfo, String relationshipType, Object scalarValue) {
+    public EntityAccess getRelationalWriter(ClassInfo classInfo, String relationshipType, String relationshipDirection, Object scalarValue) {
 
         // 1st, try to find a scalar method annotated with the relationship type.
-        MethodInfo methodInfo = classInfo.relationshipSetter(relationshipType);
+        MethodInfo methodInfo = classInfo.relationshipSetter(relationshipType, relationshipDirection, true);
         if (methodInfo != null && !methodInfo.getAnnotations().isEmpty()) {
 
             if (methodInfo.isTypeOf(scalarValue.getClass()) ||
@@ -121,7 +121,7 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
         }
 
         // 2nd, try to find a scalar or vector field annotated as the neo4j relationship type
-        FieldInfo fieldInfo = classInfo.relationshipField(relationshipType);
+        FieldInfo fieldInfo = classInfo.relationshipField(relationshipType, relationshipDirection, true);
         if (fieldInfo != null && !fieldInfo.getAnnotations().isEmpty()) {
             if (fieldInfo.isTypeOf(scalarValue.getClass()) ||
                 fieldInfo.isParameterisedTypeOf(scalarValue.getClass()) ||
@@ -130,64 +130,94 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
             }
         }
 
-        // 3rd, try to find a "setXYZ" method where XYZ is derived from the relationship type
-        methodInfo = classInfo.relationshipSetter(relationshipType);
-        if (methodInfo != null) {
-            if (methodInfo.isTypeOf(scalarValue.getClass()) ||
-                    methodInfo.isParameterisedTypeOf(scalarValue.getClass()) ||
-                    methodInfo.isArrayOf(scalarValue.getClass())) {
-                return new MethodWriter(classInfo, methodInfo);
+        //If the direction is INCOMING, then the annotation should have been present and we should have found a match already
+        if(!relationshipDirection.equals(Relationship.INCOMING)) {
+            methodInfo = classInfo.relationshipSetter(relationshipType, relationshipDirection, false);
+            if (methodInfo != null && !methodInfo.getAnnotations().isEmpty()) {
 
+                if (methodInfo.isTypeOf(scalarValue.getClass()) ||
+                        methodInfo.isParameterisedTypeOf(scalarValue.getClass()) ||
+                        methodInfo.isArrayOf(scalarValue.getClass())) {
+                    return new MethodWriter(classInfo, methodInfo);
+
+                }
+            }
+
+            // 2nd, try to find a scalar or vector field annotated as the neo4j relationship type
+            fieldInfo = classInfo.relationshipField(relationshipType, relationshipDirection, false);
+            if (fieldInfo != null && !fieldInfo.getAnnotations().isEmpty()) {
+                if (fieldInfo.isTypeOf(scalarValue.getClass()) ||
+                        fieldInfo.isParameterisedTypeOf(scalarValue.getClass()) ||
+                        fieldInfo.isArrayOf(scalarValue.getClass())) {
+                    return new FieldWriter(classInfo, fieldInfo);
+                }
+            }
+
+            // 3rd, try to find a "setXYZ" method where XYZ is derived from the relationship type
+            methodInfo = classInfo.relationshipSetter(relationshipType, relationshipDirection, false); //TODO match the field if it exists
+            if (methodInfo != null) {
+                if (methodInfo.isTypeOf(scalarValue.getClass()) ||
+                        methodInfo.isParameterisedTypeOf(scalarValue.getClass()) ||
+                        methodInfo.isArrayOf(scalarValue.getClass())) {
+                    return new MethodWriter(classInfo, methodInfo);
+                }
+            }
+
+            // 4th, try to find a "XYZ" field name where XYZ is derived from the relationship type
+            fieldInfo = classInfo.relationshipField(relationshipType, relationshipDirection, false);
+            if (fieldInfo != null) {
+                if (fieldInfo.isTypeOf(scalarValue.getClass()) ||
+                        fieldInfo.isParameterisedTypeOf(scalarValue.getClass()) ||
+                        fieldInfo.isArrayOf(scalarValue.getClass())) {
+                    return new FieldWriter(classInfo, fieldInfo);
+                }
+            }
+
+            //Find unique setters that take the parameter or unique fields of the same type of the parameter only if relationshipDirection is not INCOMING
+            if (!relationshipDirection.equals(Relationship.INCOMING)) {
+                // 5th, try to find a unique setter method that takes the parameter
+                List<MethodInfo> methodInfos = classInfo.findSetters(scalarValue.getClass());
+                if (methodInfos.size() == 1) {
+                    return new MethodWriter(classInfo, methodInfos.iterator().next());
+                }
+
+                // 6th, try to find a unique field that has the same type as the parameter
+                List<FieldInfo> fieldInfos = classInfo.findFields(scalarValue.getClass());
+                if (fieldInfos.size() == 1) {
+                    return new FieldWriter(classInfo, fieldInfos.iterator().next());
+                }
             }
         }
-
-        // 4th, try to find a "XYZ" field name where XYZ is derived from the relationship type
-        fieldInfo = classInfo.relationshipField(relationshipType);
-        if (fieldInfo != null) {
-            if (fieldInfo.isTypeOf(scalarValue.getClass()) ||
-                    fieldInfo.isParameterisedTypeOf(scalarValue.getClass()) ||
-                    fieldInfo.isArrayOf(scalarValue.getClass())) {
-                return new FieldWriter(classInfo, fieldInfo);
-            }
-        }
-
-        // 5th, try to find a unique setter method that takes the parameter
-        List<MethodInfo> methodInfos = classInfo.findSetters(scalarValue.getClass());
-        if (methodInfos.size() == 1) {
-            return new MethodWriter(classInfo, methodInfos.iterator().next());
-        }
-
-        // 6th, try to find a unique field that has the same type as the parameter
-        List<FieldInfo> fieldInfos = classInfo.findFields(scalarValue.getClass());
-        if (fieldInfos.size() == 1) {
-            return new FieldWriter(classInfo, fieldInfos.iterator().next());
-        }
-
         return null;
     }
 
     @Override
-    public RelationalReader getRelationalReader(ClassInfo classInfo, String relationshipType) {
+    public RelationalReader getRelationalReader(ClassInfo classInfo, String relationshipType, String relationshipDirection) {
         // 1st, try to find a method annotated with the relationship type.
-        MethodInfo methodInfo = classInfo.relationshipGetter(relationshipType);
+        MethodInfo methodInfo = classInfo.relationshipGetter(relationshipType, relationshipDirection);
         if (methodInfo != null && !methodInfo.getAnnotations().isEmpty()) {
             return new MethodReader(classInfo, methodInfo);
         }
 
         // 2nd, try to find a field called or annotated as the neo4j relationship type
-        FieldInfo fieldInfo = classInfo.relationshipField(relationshipType);
+        FieldInfo fieldInfo = classInfo.relationshipField(relationshipType, relationshipDirection, false);
         if (fieldInfo != null && !fieldInfo.getAnnotations().isEmpty()) {
             return new FieldReader(classInfo, fieldInfo);
         }
 
-        // 3rd, try to find a "getXYZ" method where XYZ is derived from the given relationship type
-        if (methodInfo != null) {
-            return new MethodReader(classInfo, methodInfo);
-        }
+        //Find a getter or field derived from the relationship type
+        //If it is INCOMING, then the annotation should have been present and we should have found a match already
 
-        // 4th, try to find a "XYZ" field name where XYZ is derived from the relationship type
-        if (fieldInfo != null) {
-            return new FieldReader(classInfo, fieldInfo);
+        if(!relationshipDirection.equals(Relationship.INCOMING)) {
+            // 3rd, try to find a "getXYZ" method where XYZ is derived from the given relationship type
+            if (methodInfo != null) {
+                return new MethodReader(classInfo, methodInfo);
+            }
+
+            // 4th, try to find a "XYZ" field name where XYZ is derived from the relationship type
+            if (fieldInfo != null) {
+                return new FieldReader(classInfo, fieldInfo);
+            }
         }
 
         //
@@ -236,12 +266,12 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
     }
 
     @Override
-    public EntityAccess getIterableWriter(ClassInfo classInfo, Class<?> parameterType, String relationshipType) {
-        MethodInfo methodInfo = getIterableSetterMethodInfo(classInfo, parameterType, relationshipType);
+    public EntityAccess getIterableWriter(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection) {
+        MethodInfo methodInfo = getIterableSetterMethodInfo(classInfo, parameterType, relationshipType, relationshipDirection);
         if (methodInfo != null) {
             return new MethodWriter(classInfo, methodInfo);
         }
-        FieldInfo fieldInfo = getIterableFieldInfo(classInfo, parameterType, relationshipType);
+        FieldInfo fieldInfo = getIterableFieldInfo(classInfo, parameterType, relationshipType,relationshipDirection);
         if (fieldInfo != null) {
             return new FieldWriter(classInfo, fieldInfo);
         }
@@ -249,12 +279,12 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
     }
 
     @Override
-    public RelationalReader getIterableReader(ClassInfo classInfo, Class<?> parameterType, String relationshipType) {
-        MethodInfo methodInfo = getIterableGetterMethodInfo(classInfo, parameterType, relationshipType);
+    public RelationalReader getIterableReader(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection) {
+        MethodInfo methodInfo = getIterableGetterMethodInfo(classInfo, parameterType, relationshipType, relationshipDirection);
         if (methodInfo != null) {
             return new MethodReader(classInfo, methodInfo);
         }
-        FieldInfo fieldInfo = getIterableFieldInfo(classInfo, parameterType, relationshipType);
+        FieldInfo fieldInfo = getIterableFieldInfo(classInfo, parameterType, relationshipType, relationshipDirection);
         if (fieldInfo != null) {
             return new FieldReader(classInfo, fieldInfo);
         }
@@ -316,13 +346,15 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
         return null;
     }
 
-    private MethodInfo getIterableSetterMethodInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType) {
-        List<MethodInfo> methodInfos = classInfo.findIterableSetters(parameterType, relationshipType);
+    private MethodInfo getIterableSetterMethodInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection) {
+        List<MethodInfo> methodInfos = classInfo.findIterableSetters(parameterType, relationshipType, relationshipDirection);
         if (methodInfos.size() == 0) {
-            methodInfos = classInfo.findIterableSetters(parameterType);
+            if(!relationshipDirection.equals(Relationship.INCOMING)) {
+                methodInfos = classInfo.findIterableSetters(parameterType);
+            }
         }
         if (methodInfos.size() == 1) {
-            return methodInfos.iterator().next();
+                return methodInfos.iterator().next();
         }
 
         if (methodInfos.size() > 0) {
@@ -333,10 +365,12 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
         return null;
     }
 
-    private MethodInfo getIterableGetterMethodInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType) {
-        List<MethodInfo> methodInfos = classInfo.findIterableGetters(parameterType,relationshipType);
+    private MethodInfo getIterableGetterMethodInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection) {
+        List<MethodInfo> methodInfos = classInfo.findIterableGetters(parameterType, relationshipType, relationshipDirection);
         if(methodInfos.size() == 0) {
-            methodInfos = classInfo.findIterableGetters(parameterType);
+            if(!relationshipDirection.equals(Relationship.INCOMING)) {
+                methodInfos = classInfo.findIterableGetters(parameterType);
+            }
         }
         if (methodInfos.size() == 1) {
             return methodInfos.iterator().next();
@@ -349,13 +383,15 @@ public class DefaultEntityAccessStrategy implements EntityAccessStrategy {
         return null;
     }
 
-    private FieldInfo getIterableFieldInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType) {
+    private FieldInfo getIterableFieldInfo(ClassInfo classInfo, Class<?> parameterType, String relationshipType, String relationshipDirection) {
         List<FieldInfo> fieldInfos = classInfo.findIterableFields(parameterType, relationshipType);
         if(fieldInfos.size() == 0) {
-            fieldInfos = classInfo.findIterableFields(parameterType);
+            if(!relationshipDirection.equals(Relationship.INCOMING)) {
+                fieldInfos = classInfo.findIterableFields(parameterType);
+            }
         }
         if (fieldInfos.size() == 1) {
-            return fieldInfos.iterator().next();
+                return fieldInfos.iterator().next();
         }
 
         if (fieldInfos.size() > 0) {

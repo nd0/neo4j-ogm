@@ -84,6 +84,17 @@ public class FieldInfo {
         return null;
     }
 
+    public String relationshipTypeAnnotation() {
+        if (!isSimple()) {
+            try {
+                return getAnnotations().get(Relationship.CLASS).get(Relationship.TYPE, null);
+            } catch (NullPointerException npe) {
+                //TODO log
+            }
+        }
+        return null;
+    }
+
     public String getDescriptor() {
         return descriptor;
     }
