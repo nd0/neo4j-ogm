@@ -52,4 +52,10 @@ public abstract class Entity
     {
         return (nodeId == null) ? -1 : nodeId.hashCode();
     }
+
+    @Override
+    public String toString()
+    {
+        return getClass().getSimpleName() + '{' + "id:" + getNodeId() + '}';
+    }
 }

@@ -13,17 +13,21 @@
  */
 package org.neo4j.ogm.integration.mappings;
 
-import java.io.IOException;
-
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.neo4j.ogm.domain.mappings.Article;
 import org.neo4j.ogm.domain.mappings.Person;
 import org.neo4j.ogm.domain.mappings.RichRelation;
+import org.neo4j.ogm.domain.mappings.Tag;
 import org.neo4j.ogm.session.Session;
 import org.neo4j.ogm.session.SessionFactory;
 import org.neo4j.ogm.testutil.Neo4jIntegrationTestRule;
+
+import java.io.IOException;
+import java.util.Arrays;
+
+import static org.junit.Assert.assertSame;
 
 /**
  * @author Nils Dröge
@@ -70,15 +74,20 @@ public class RichRelationTest {
         session.save(person);
 
         Article article1 = new Article();
+        Tag tag1 = new Tag("tag1");
+        article1.tags = Arrays.asList(tag1);
         session.save(article1);
         RichRelation relation1 = new RichRelation();
         person.addRelation(article1, relation1);
         session.save(person, 1);
-        session.clear();
 
-        Article updateArticle = new Article();
-        updateArticle.setNodeId(article1.getNodeId());
-        updateArticle.relations = article1.relations;
+        Article updateArticle = session.load(Article.class, article1.getNodeId(), 1);
+        assertSame(updateArticle, ((RichRelation)updateArticle.relations.toArray()[0]).article);
+        updateArticle.tags = Arrays.asList(new Tag("tag2"));
+        session.save(updateArticle, 1);
+
+        updateArticle = session.load(Article.class, article1.getNodeId(), 1);
+//        assertSame(updateArticle, ((RichRelation)updateArticle.relations.toArray()[0]).article);
         session.save(updateArticle, 1);
     }
 }

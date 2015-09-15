@@ -14,10 +14,11 @@
 
 package org.neo4j.ogm.domain.mappings;
 
-import java.util.HashSet;
-import java.util.Set;
-
 import org.neo4j.ogm.annotation.Relationship;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * @author Nils Dröge
@@ -26,4 +27,7 @@ public class Article extends Entity
 {
     @Relationship(type = "RELATED_TO", direction = "INCOMING")
     public Set<RichRelation> relations = new HashSet<>();
+
+    @Relationship(type = "HAS")
+    public List<Tag> tags;
 }
